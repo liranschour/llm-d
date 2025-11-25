@@ -1,0 +1,11 @@
+# syntax=docker/dockerfile:1.4
+FROM quay.io/oroz/llm-d:ba558c02-fixed2
+
+RUN git config --global --add safe.directory /workspace/vllm
+RUN git remote add lirans https://(cat ~/.github_token)@github.com/liranschour/vllm.git && \
+    git fetch lirans && \
+    git reset --hard lirans/nixl_kv_base
+
+# Final environment setup
+ENV PATH="/workspace/vllm/.vllm/bin:${PATH}"
+ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
