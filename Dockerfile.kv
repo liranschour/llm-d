@@ -1,0 +1,278 @@
+ARG BASE_IMAGE="nvcr.io/nvidia/cuda"
+ARG BASE_IMAGE_TAG="12.8.0-devel-ubuntu24.04"
+
+ARG RUNTIME_IMAGE="nvcr.io/nvidia/cuda"
+ARG RUNTIME_IMAGE_TAG="12.8.0-devel-ubuntu24.04"
+
+FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS nixl_base
+ENV DEBIAN_FRONTEND=noninteractive
+
+
+
+# ##################################
+# ########## Build Image ###########
+# ##################################
+
+FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS build
+ENV DEBIAN_FRONTEND=noninteractive
+
+USER root
+
+### NIXL Dependencies setup ###
+
+ARG MOFED_VERSION=24.10-1.1.4.0
+ARG PYTHON_VERSION=3.12
+ARG NSYS_URL=https://developer.nvidia.com/downloads/assets/tools/secure/nsight-systems/2025_1/
+ARG NSYS_PKG=NsightSystems-linux-cli-public-2025.1.1.131-3554042.deb
+
+
+RUN apt-get update -y && apt-get -y install curl \
+    git \
+    libnuma-dev \
+    numactl \
+    wget \
+    autotools-dev \
+    automake \
+    libtool \
+    libz-dev \
+    libiberty-dev \
+    flex \
+    build-essential \
+    cmake \
+    libibverbs-dev \
+    libgoogle-glog-dev \
+    libgtest-dev \
+    libjsoncpp-dev \
+    libpython3-dev \
+    libboost-all-dev \
+    libssl-dev \
+    libgrpc-dev \
+    libgrpc++-dev \
+    libprotobuf-dev \
+    libclang-dev \
+    protobuf-compiler-grpc \
+    pybind11-dev \
+    python3-full \
+    python3-pip \
+    python3-numpy \
+    etcd-server \
+    net-tools \
+    pciutils \
+    libpci-dev \
+    vim \
+    tmux \
+    screen \
+    ibverbs-utils \
+    libibmad-dev \
+    libhiredis-dev \
+    libuv1-dev \
+    pkg-config
+
+RUN apt-get update && apt-get install -y \
+    build-essential cmake libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
+    libboost-all-dev libssl-dev zlib1g-dev libcpprest-dev git \
+    && rm -rf /var/lib/apt/lists/*
+
+
+RUN apt-get update && apt-get install -y libibverbs1 librdmacm1 rdma-core
+RUN apt-get install -y linux-tools-common linux-tools-generic ethtool iproute2
+RUN apt-get install -y dkms linux-headers-generic
+RUN apt-get install -y meson ninja-build uuid-dev gdb
+
+RUN apt install -y libglib2.0-0
+RUN wget ${NSYS_URL}${NSYS_PKG} &&\
+    apt install -y ./${NSYS_PKG} &&\
+    rm ${NSYS_PKG}
+
+RUN cd /usr/local/src && \
+    curl -fSsL "https://content.mellanox.com/ofed/MLNX_OFED-${MOFED_VERSION}/MLNX_OFED_LINUX-${MOFED_VERSION}-ubuntu24.04-x86_64.tgz" -o mofed.tgz && \
+    tar -xf /usr/local/src/mofed.tgz && \
+    cd MLNX_OFED_LINUX-* && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ./DEBS/libibverbs* ./DEBS/ibverbs-providers* ./DEBS/librdmacm* ./DEBS/libibumad* && \
+    rm -rf /var/lib/apt/lists/* /usr/local/src/* mofed.tgz
+
+ENV LIBRARY_PATH=$LIBRARY_PATH:/usr/local/cuda/lib64 \
+    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+
+ENV LIBRARY_PATH=$LIBRARY_PATH:/usr/local/lib \
+    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
+
+WORKDIR /workspace
+
+RUN git clone https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3.git .
+RUN mkdir build && cd build && cmake .. && make -j$(nproc) && make install
+RUN git clone https://github.com/NVIDIA/gdrcopy.git
+RUN PREFIX=/usr/local DESTLIB=/usr/local/lib make -C /workspace/gdrcopy lib_install
+RUN cp gdrcopy/src/libgdrapi.so.2.* /usr/lib/x86_64-linux-gnu/
+RUN ldconfig
+
+ARG UCX_VERSION=v1.19.0
+
+RUN cd /usr/local/src && \
+    curl -fSsL "https://github.com/openucx/ucx/tarball/${UCX_VERSION}" | tar xz && \
+    cd openucx-ucx* && \
+    ./autogen.sh && ./configure     \
+    --enable-shared             \
+    --disable-static            \
+    --disable-doxygen-doc       \
+    --enable-optimizations      \
+    --enable-cma                \
+    --enable-devel-headers      \
+    --with-cuda=/usr/local/cuda \
+    --with-verbs                \
+    --with-dm                   \
+    --with-gdrcopy=/usr/local   \
+    --enable-mt                 \
+    --with-mlx5-dv &&           \
+    make -j &&                      \
+    make -j install-strip &&        \
+    ldconfig
+
+ENV LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+ENV CPATH=/usr/include:$CPATH
+ENV PATH=/usr/bin:$PATH
+ENV PKG_CONFIG_PATH=/usr/lib/pkgconfig:$PKG_CONFIG_PATH
+SHELL ["/bin/bash", "-c"]
+
+WORKDIR /workspace
+
+ENV LD_LIBRARY_PATH=/usr/local/ompi/lib:$LD_LIBRARY_PATH
+ENV CPATH=/usr/local/ompi/include:$CPATH
+ENV PATH=/usr/local/ompi/bin:$PATH
+ENV PKG_CONFIG_PATH=/usr/local/ompi/lib/pkgconfig:$PKG_CONFIG_PATH
+
+## VLLM ##
+RUN python3 -m venv venv
+RUN . venv/bin/activate && pip install torch torchvision torchaudio --force-reinstall
+ENV NVSHMEM_DIR=/usr/local/nvshmem
+RUN cd /tmp && \
+    wget https://developer.nvidia.com/downloads/assets/secure/nvshmem/nvshmem_src_cuda12-all && \
+    tar -xf nvshmem_src_cuda12-all && \
+    cd nvshmem_src && \
+    mkdir build && \
+    cd build && \
+    cmake \
+    -G Ninja \
+    -DNVSHMEM_PREFIX=${NVSHMEM_DIR} \
+    -DCMAKE_CUDA_ARCHITECTURES="90a;100" \
+    -DNVSHMEM_PMIX_SUPPORT=0 \
+    -DNVSHMEM_LIBFABRIC_SUPPORT=0 \
+    -DNVSHMEM_IBRC_SUPPORT=1 \
+    -DNVSHMEM_IBGDA_SUPPORT=1 \
+    -DNVSHMEM_IBDEVX_SUPPORT=1 \
+    -DNVSHMEM_SHMEM_SUPPORT=0 \
+    -DNVSHMEM_USE_GDRCOPY=1 \
+    -DNVSHMEM_MPI_SUPPORT=0 \
+    -DNVSHMEM_USE_NCCL=0 \
+    -DNVSHMEM_BUILD_TESTS=0 \
+    -DNVSHMEM_BUILD_EXAMPLES=0 \
+    -DGDRCOPY_HOME=/usr/local \
+    -DNVSHMEM_DISABLE_CUDA_VMM=1 \
+    .. && \
+    ninja -j$(nproc) && \
+    ninja install && \
+    cd /tmp && rm -rf nvshmem_src*
+
+ENV CPATH="${NVSHMEM_DIR}/include:${CPATH}"
+ENV LD_LIBRARY_PATH="${NVSHMEM_DIR}/lib:${LD_LIBRARY_PATH}"
+
+RUN echo "Checking NVSHMEM installation:" && \
+    ls -la ${NVSHMEM_DIR}/include/ || echo "NVSHMEM include directory not found" && \
+    ls -la ${NVSHMEM_DIR}/lib/ || echo "NVSHMEM lib directory not found" && \
+    echo "NVSHMEM_DIR: ${NVSHMEM_DIR}" && \
+    echo "CPATH: ${CPATH}" && \
+    echo "LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
+
+ENV PATH="/workspace/venv/bin:$PATH"
+ENV TORCH_CUDA_ARCH_LIST="9.0"
+
+# Build DeepEP, DeepGEMM, and pplx-kernels
+ARG DEEPEP_URL="https://github.com/neuralmagic/DeepEP"
+ARG DEEPGEMM_URL="https://github.com/neuralmagic/DeepGEMM"
+ARG PPLX_KERNELS_URL="https://github.com/neuralmagic/pplx-kernels"
+RUN mkdir -p /wheels && \
+    . venv/bin/activate &&  pip install build cuda-python numpy setuptools-scm  wheel && \
+    cd /tmp && \
+    git clone "${DEEPEP_URL}" deepep && \
+    cd deepep && \
+    python -m build --no-isolation --wheel -o /wheels && \
+    cd .. && rm -rf deepep && \
+    git clone "${DEEPGEMM_URL}" deepgemm && \
+    cd deepgemm && \
+    git submodule update --init --recursive && \
+    python -m build --no-isolation --wheel -o /wheels && \
+    cd .. && rm -rf deepgemm && \
+    git clone ${PPLX_KERNELS_URL} pplx-kernels && \
+    cd pplx-kernels && \
+    git checkout build-fixes && \
+    NVSHMEM_PREFIX=${NVSHMEM_DIR} python -m build --no-isolation --wheel -o /wheels && \
+    cd .. && rm -rf pplx-kernels
+
+RUN echo "Checking wheels directory contents:" && \
+    ls -la /wheels/ || echo "Wheels directory is empty" && \
+    find /tmp -name "*.whl" 2>/dev/null || echo "No wheels found in /tmp" && \
+    find /workspace -name "*.whl" 2>/dev/null || echo "No wheels found in /workspace"
+
+
+RUN . venv/bin/activate &&  pip install /wheels/*.whl
+ARG CACHE=0
+WORKDIR /workspace
+#RUN git clone https://github.com/praveingk/vllm.git
+RUN git clone https://$(cat ~/.github_token)@github.com/liranschour/vllm.git
+WORKDIR /workspace/vllm
+RUN git checkout nixl_kv_base
+RUN MAX_JOBS=6 pip install -e . --extra-index-url https://download.pytorch.org/whl/cu128
+
+WORKDIR /workspace
+
+#RUN git clone https://github.com/liranschour/LMCache.git
+#RUN cd LMCache && git checkout nixl-zcopy-push && pip install -e . && cd ..
+
+
+
+RUN pip install zmq numpy rust-just triton
+
+
+
+### UCCL ###
+
+RUN git clone https://github.com/redis/hiredis.git
+RUN cd hiredis && mkdir build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j && make install && cd ../..
+
+RUN git clone https://github.com/sewenew/redis-plus-plus.git
+RUN cd redis-plus-plus && mkdir build && cd build && \
+    cmake                                  \
+      -DCMAKE_BUILD_TYPE=Release           \
+      -DCMAKE_INSTALL_PREFIX=/usr/local    \
+      -DREDIS_PLUS_PLUS_CXX_STANDARD=17    \
+      -DREDIS_PLUS_PLUS_BUILD_ASYNC=libuv  .. && \
+    make -j && make install && cd ../.. 
+RUN apt-get update && apt-get install -y \
+    libelf-dev \
+    libaio-dev \
+    && rm -rf /var/lib/apt/lists/*
+ARG CACHE=0
+RUN git clone https://github.com/uccl-project/uccl.git
+RUN cd uccl &&  \
+    cd p2p && make install-deps && make && make install
+
+### NIXL setup ###
+
+WORKDIR /workspace
+#COPY deployment/Justfile.2nodes Justfile
+
+RUN git clone https://github.com/ai-dynamo/nixl.git
+
+RUN cd nixl && \
+    mkdir build && \
+    meson setup build/ --prefix=/usr/local/nixl && \
+    cd build/ && \
+    ninja && \
+    ninja install
+
+RUN pip install nixl==0.8.0
+
+RUN pip install lm_eval[api]
