@@ -2,9 +2,36 @@
 FROM quay.io/oroz/llm-d:ba558c02-fixed2
 
 RUN git config --global --add safe.directory /workspace/vllm
-RUN git remote add lirans https://(cat ~/.github_token)@github.com/liranschour/vllm.git && \
+RUN git remote add lirans https://$(cat ~/.github_token)@github.com/liranschour/vllm.git && \
     git fetch lirans && \
     git reset --hard lirans/nixl_kv_base
+
+RUN cd /workspace && git clone https://github.com/uccl-project/uccl.git
+
+# Build and install UCX
+WORKDIR /workspace
+ARG UCX_VERSION="v1.19.0-rc1"
+RUN --mount=type=cache,target=/var/cache/git \
+    git clone https://github.com/openucx/ucx.git && \
+    cd ucx && \
+    git checkout ${UCX_VERSION} && \
+    ./autogen.sh && \
+    ./contrib/configure-release \
+        --enable-shared \
+        --disable-static \
+        --disable-doxygen-doc \
+        --enable-cma \
+        --enable-devel-headers \
+        --with-cuda=/usr/local/cuda \
+        --with-verbs \
+        --with-dm \
+        --with-gdrcopy=/usr/local \
+        --enable-mt \
+        --with-mlx5 \
+        --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make install-strip && \
+    ldconfig
 
 # Final environment setup
 ENV PATH="/workspace/vllm/.vllm/bin:${PATH}"
