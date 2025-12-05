@@ -11,7 +11,7 @@
 ## Deployment
 ### Dockerfile
     Dockerfile.kv
-    DOCKER_BUILDKIT=1 docker build --build-arg GITHUB_TOKEN=$(cat ~/.github_token) -t llm-d/nixl_kv_layout . -f Dockerfile.kv_1 --load
+    DOCKER_BUILDKIT=1 docker build --build-arg GITHUB_TOKEN=$(cat ~/.github_token) -t llm-d/nixl_kv_layout . -f Dockerfile.kv --load
 
 ### POD yaml
     pok-deployment-new-2.yaml
