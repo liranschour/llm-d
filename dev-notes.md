@@ -5,6 +5,9 @@
 ###
     vllm bench serve --model Qwen/Qwen3-0.6B --num-prompts 1000 --port 8192 --random-input-len 16 --seed $(date +%s)
 
+### Accuracy test
+    vllm/tests/v1/kv_connector/nixl_integration# DECODER_TP_SIZE=2 ./run_accuracy_test.sh
+
 ## Deployment
 ### Dockerfile
     Dockerfile.kv
