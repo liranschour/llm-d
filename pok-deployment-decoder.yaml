@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: llmd-transport-decoder
+  namespace: vela-on-prem-operations
+  labels:
+    app: llmd-transport
+    anti-affinity-group: groupA
+  annotations:
+    k8s.v1.cni.cncf.io/networks: |
+      [
+        {
+          "name": "multi-nic-compute",
+          "namespace": "openshift-sriov-network-operator"
+        }
+      ] 
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: nvidia.com/gpu.product
+            operator: In
+            values:
+            - NVIDIA-H100-80GB-HBM3
+
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              anti-affinity-group: groupA
+          topologyKey: kubernetes.io/hostname
+  #nodeSelector:
+    # Note: Replace hostname or remove selector altogether
+  #  kubernetes.io/hostname: pokprod-b93r44s1
+  serviceAccountName: default
+  containers:
+  - name: llmd-transport-decoder
+    securityContext:
+      runAsUser: 0
+      capabilities:
+        add:
+        - IPC_LOCK
+        - SYS_RAWIO
+    image: quay.io/liranschour/llm-d/nixl_kv_layout_base:1.0.8
+    imagePullPolicy: Always
+    command: [
+      '/bin/sh',
+      '-c',
+      'sleep infinity']
+    env:
+    - name: UCX_LOG_LEVEL
+      value: "info"
+    resources:
+      requests:
+        nvidia.com/gpu: 2
+        cpu: "32"
+        memory: 100Gi
+        rdma/roce_gdr: 1
+      limits:
+        nvidia.com/gpu: 2
+        cpu: "32"
+        memory: 100Gi
+        rdma/roce_gdr: 1
+    volumeMounts:
+      - name: dshm
+        mountPath: "/dev/shm"
+  volumes:
+    - name: dshm
+      emptyDir:
+        medium: Memory
