@@ -1,3 +1,5 @@
+## User Guide
+[Nixl User Guide](https://github.com/vllm-project/vllm/blob/main/docs/features/nixl_connector_usage.md)
 ## Tests
 ### Sanity
     lm_eval --model local-chat-completions --model_args "base_url=http://localhost:8192/v1/chat/completions,tokenized_requests=False" --tasks gsm8k --apply_chat_template --fewshot_as_multiturn --num_fewshot 5 --limit 20
