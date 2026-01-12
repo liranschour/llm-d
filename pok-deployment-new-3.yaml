@@ -35,7 +35,7 @@ spec:
         add:
         - IPC_LOCK
         - SYS_RAWIO
-    image: quay.io/liranschour/llm-d/nixl_kv_layout_base:1.0.5
+    image: quay.io/liranschour/llm-d/nixl_kv_layout_base:1.0.8
     imagePullPolicy: Always
     command: [
       '/bin/sh',

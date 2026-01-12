@@ -43,7 +43,8 @@ spec:
         add:
         - IPC_LOCK
         - SYS_RAWIO
-    image: quay.io/liranschour/llm-d/nixl_kv_layout_base:1.0.8
+    #image: quay.io/liranschour/llm-d/nixl_kv_layout_base:1.0.8
+    image: quay.io/liranschour/llm-d/nixl_oc:0.0.1
     imagePullPolicy: Always
     command: [
       '/bin/sh',
@@ -54,19 +55,23 @@ spec:
       value: "info"
     resources:
       requests:
-        nvidia.com/gpu: 2
+        nvidia.com/gpu: 4
         cpu: "32"
-        memory: 100Gi
+        memory: 150Gi
         rdma/roce_gdr: 1
       limits:
-        nvidia.com/gpu: 2
+        nvidia.com/gpu: 4
         cpu: "32"
-        memory: 100Gi
+        memory: 150Gi
         rdma/roce_gdr: 1
     volumeMounts:
       - name: dshm
         mountPath: "/dev/shm"
+      - name: app-logs
+        mountPath: /var/log/myapp
   volumes:
     - name: dshm
       emptyDir:
         medium: Memory
+    - name: app-logs
+      emptyDir: {}

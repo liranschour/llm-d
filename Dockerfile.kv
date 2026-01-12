@@ -216,12 +216,13 @@ RUN echo "Checking wheels directory contents:" && \
 
 
 RUN . venv/bin/activate &&  pip install /wheels/*.whl
-ARG CACHE=0
+ARG CACHE=1
 WORKDIR /workspace
 #RUN git clone https://github.com/praveingk/vllm.git
 RUN git clone https://$(cat ~/.github_token)@github.com/liranschour/vllm.git
 WORKDIR /workspace/vllm
-RUN git checkout nixl_kv_base
+#RUN git checkout nixl_kv_base
+RUN git checkout nixl_kv_cont_cross_layers
 RUN MAX_JOBS=6 pip install -e . --extra-index-url https://download.pytorch.org/whl/cu128
 
 WORKDIR /workspace
