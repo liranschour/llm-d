@@ -44,7 +44,7 @@ spec:
         add:
         - IPC_LOCK
         - SYS_RAWIO
-    image: quay.io/liranschour/llm-d/nixl_kv_layout_base:1.0.8
+    image: quay.io/liranschour/llm-d/nixl_kv_layout_base:1.1.1
     imagePullPolicy: Always
     command: [
       '/bin/sh',
@@ -55,12 +55,12 @@ spec:
       value: "info"
     resources:
       requests:
-        nvidia.com/gpu: 1
+        nvidia.com/gpu: 2
         cpu: "32"
         memory: 100Gi
         rdma/roce_gdr: 1
       limits:
-        nvidia.com/gpu: 1
+        nvidia.com/gpu: 2
         cpu: "32"
         memory: 100Gi
         rdma/roce_gdr: 1
