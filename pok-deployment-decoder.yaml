@@ -55,12 +55,12 @@ spec:
       value: "info"
     resources:
       requests:
-        nvidia.com/gpu: 4
+        nvidia.com/gpu: 2
         cpu: "32"
         memory: 250Gi
         rdma/roce_gdr: 1
       limits:
-        nvidia.com/gpu: 4
+        nvidia.com/gpu: 2
         cpu: "32"
         memory: 250Gi
         rdma/roce_gdr: 1
